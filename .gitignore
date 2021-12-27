@@ -1,0 +1,6 @@
+src/__pycache__
+data/old_all_data
+model
+runs
+test.py
+log
