@@ -106,7 +106,8 @@ def output_original(nums, infix):
     return ' '.join(original)
 
 def process_ano_line(line):
-    processed_lines = list()
+    processed_lines_all = list()
+    processed_lines_limited = list()
     extracted = extract_line(line)
     for key in extracted:
         print(line["id"])
@@ -123,11 +124,12 @@ def process_ano_line(line):
         copy_line["interpretation"] = {}
 
         # control output length
-        if len(copy_line["output_prefix"].split()) > 13 or len(copy_line["output_prefix"].split()) < 3:
-            continue
-        processed_lines.append(copy_line)
+        if len(copy_line["output_prefix"].split()) <= 13 and len(copy_line["output_prefix"].split()) >= 3:
+            processed_lines_limited.append(copy_line)
 
-    return processed_lines
+        processed_lines_all.append(copy_line)
+
+    return processed_lines_all, processed_lines_limited
 
 
 def find_ori_output(equ, q):
@@ -154,23 +156,36 @@ def generate_ori(line_):
 
 
 def process_data(ano_data):
-    processed_data = list()
+    np.random.seed(100)
+    random.seed(100)
+
+    processed_data_all = list()
+    processed_data_limited = list()
     ori_data = list()
 
-    ano_cut1 = -1
-    ano_cut2 = -1
+    all_cut1 = -1
+    all_cut2 = -1
+    limited_cut1 = -1
+    limited_cut2 = -1
+
     idx = 0
     for line in ano_data:
         idx += 1
+        
         print(idx)
-        processed_data += process_ano_line(line)
+        lines_all, lines_limited = process_ano_line(line)
+        processed_data_all += lines_all
+        processed_data_limited += lines_limited
         ori_data.append(generate_ori(line))
-        if len(ori_data) == 100:
-            ano_cut1 = len(processed_data)
-        if len(ori_data) == 200:
-            ano_cut2 = len(processed_data)
 
-    return processed_data, ori_data, [ano_cut1, ano_cut2]
+        if len(ori_data) == 100:
+            all_cut1 = len(processed_data_all)
+            limited_cut1 = len(processed_data_limited)
+        if len(ori_data) == 200:
+            all_cut2 = len(processed_data_all)
+            limited_cut2 = len(processed_data_limited)
+
+    return processed_data_all, processed_data_limited, ori_data, [all_cut1, all_cut2], [limited_cut1, limited_cut2]
 
 
 if __name__ == "__main__":
@@ -184,25 +199,25 @@ if __name__ == "__main__":
         ano_files += files
         for file in files:
             ano_data += read_json(os.path.join(root, file))
+    random.shuffle(ano_data)
 
     print(len(ano_data))
     write_json("annotated_all.json", ano_data)
     ano_data = read_json("annotated_all.json")
 
-    # ori_data = list()
-    # ori_data += read_json(ori_path+"train.json")
-    # ori_data += read_json(ori_path+"valid.json")
-    # ori_data += read_json(ori_path+"test.json")
-    # print(len(ori_data))
-
-    ano_data, ori_data, split = process_data(ano_data)
-    print(len(ano_data), len(ori_data), split)
-    write_json("ano_data.json", ano_data)
+    all_data, limited_data, ori_data, all_split, limited_split = process_data(ano_data)
+    print(len(all_data), len(limited_data), len(ori_data), all_split, limited_split)
+    write_json("ano_data.json", all_data)
     write_json("ori_data.json", ori_data)
     
-    write_json("train.json", ano_data[split[1]:])
-    write_json("valid.json", ano_data[split[0]:split[1]])
-    write_json("test.json", ano_data[:split[0]])
+    write_json("train_all.json", all_data[all_split[1]:])
+    write_json("valid_all.json", all_data[all_split[0]:all_split[1]])
+    write_json("test_all.json", all_data[:all_split[0]])
+
+    write_json("train_limited.json", limited_data[limited_split[1]:])
+    write_json("valid_limited.json", limited_data[limited_split[0]:limited_split[1]])
+    write_json("test_limited.json", limited_data[:limited_split[0]])
+
     write_json("train_ori.json", ori_data[200:])
     write_json("valid_ori.json", ori_data[100:200])
     write_json("test_ori.json", ori_data[:100])
