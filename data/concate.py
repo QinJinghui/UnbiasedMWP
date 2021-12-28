@@ -122,6 +122,7 @@ def process_ano_line(line):
         copy_line["output_original"] = output_original(copy_line["nums"], key)
         copy_line["interpretation"] = {}
 
+        # control output length
         if len(copy_line["output_prefix"].split()) > 13 or len(copy_line["output_prefix"].split()) < 3:
             continue
         processed_lines.append(copy_line)
