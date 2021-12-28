@@ -105,11 +105,11 @@ def output_original(nums, infix):
             original[i] = nums[int(original[i][1:])]
     return ' '.join(original)
 
-def process_ano_line(line, ori_line):
+def process_ano_line(line):
     processed_lines = list()
     extracted = extract_line(line)
     for key in extracted:
-        # print(line["id"])
+        print(line["id"])
         copy_line = deepcopy(line)
         del copy_line["equ_unbias"]
         del copy_line["mask_text"]
@@ -119,39 +119,54 @@ def process_ano_line(line, ori_line):
         copy_line["nums"] = generate_num(copy_line["original_text"])
         copy_line["output_infix"] = key
         copy_line["output_prefix"] = ' '.join(from_infix_to_prefix(key.split()))
-        copy_line["output_original"] = output_original(line["nums"], key)
+        copy_line["output_original"] = output_original(copy_line["nums"], key)
         copy_line["interpretation"] = {}
         processed_lines.append(copy_line)
 
     return processed_lines
 
 
-def find_data(id, data):
-    find_data = list()
-    for line in data:
-        if line["id"] == id:
-            find_data.append(line)
-    return find_data
+def find_ori_output(equ, q):
+    for output in equ:
+        if equ[output] == q:
+            return output
+    return ""
+
+def generate_ori(line_):
+    line = deepcopy(line_)
+    line["original_text"] = line["context"] + line["original_question"]
+    line["question"] = line["original_question"]
+    line["nums"] = generate_num(line["original_text"])
+    output = find_ori_output(line["equ_unbias"], line["question"])
+    assert output != ""
+    line["output_infix"] = output
+    line["output_prefix"] = ' '.join(from_infix_to_prefix(output.split()))
+    line["output_original"] = output_original(line["nums"], output)
+    line["interpretation"] = {}
+    del line["equ_unbias"]
+    del line["mask_text"]
+    del line["original_question"]
+    return line
 
 
-def process_data(ano_data, ori_data):
+def process_data(ano_data):
     processed_data = list()
-    ori_data_use = list()
+    ori_data = list()
 
     ano_cut1 = -1
     ano_cut2 = -1
+    idx = 0
     for line in ano_data:
-        ori_find = find_data(line["id"], ori_data)
-        ori_data_use += [ori_find[0]]
-        processed_data += process_ano_line(line, ori_find[0])
-
-        if len(ori_data_use) == 100:
+        idx += 1
+        print(idx)
+        processed_data += process_ano_line(line)
+        ori_data.append(generate_ori(line))
+        if len(ori_data) == 100:
             ano_cut1 = len(processed_data)
-        if len(ori_data_use) == 200:
+        if len(ori_data) == 200:
             ano_cut2 = len(processed_data)
 
-
-    return processed_data, ori_data_use, [ano_cut1, ano_cut2]
+    return processed_data, ori_data, [ano_cut1, ano_cut2]
 
 
 if __name__ == "__main__":
@@ -167,14 +182,16 @@ if __name__ == "__main__":
             ano_data += read_json(os.path.join(root, file))
 
     print(len(ano_data))
+    write_json("annotated_all.json", ano_data)
+    ano_data = read_json("annotated_all.json")
 
-    ori_data = list()
-    ori_data += read_json(ori_path+"train.json")
-    ori_data += read_json(ori_path+"valid.json")
-    ori_data += read_json(ori_path+"test.json")
-    print(len(ori_data))
+    # ori_data = list()
+    # ori_data += read_json(ori_path+"train.json")
+    # ori_data += read_json(ori_path+"valid.json")
+    # ori_data += read_json(ori_path+"test.json")
+    # print(len(ori_data))
 
-    ano_data, ori_data, split = process_data(ano_data, ori_data)
+    ano_data, ori_data, split = process_data(ano_data)
     print(len(ano_data), len(ori_data), split)
     write_json("ano_data.json", ano_data)
     write_json("ori_data.json", ori_data)

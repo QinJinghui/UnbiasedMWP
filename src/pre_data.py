@@ -1695,6 +1695,7 @@ def my_collate(batch_line):
     nums = []
     num_size = []
     num_idx = []
+    ids = []
 
     for line in batch_line:
         token_len.append(len(line["tokens"]))
@@ -1707,6 +1708,7 @@ def my_collate(batch_line):
         nums.append(line["nums"])
         num_size.append(len(line["nums"]))
         num_idx.append(line["num_idx"])
+        ids.append(line["id"])
 
     batch = {
         "max_token_len": max(token_len),
@@ -1719,5 +1721,6 @@ def my_collate(batch_line):
         "nums": nums,
         "num_size":num_size,
         "num_idx": num_idx,
+        "id":ids,   
     }
     return batch
