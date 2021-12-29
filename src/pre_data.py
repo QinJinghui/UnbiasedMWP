@@ -1055,8 +1055,10 @@ def transfer_num(data, tokenizer, mask=False, trainset=False):
                 if p_start > 0:
                     res += seg_and_tag(st[:p_start])
                 st_num = st[p_start:p_end]
-                if nums.count(st_num) == 1:
+                if nums.count(st_num) >= 1:
                     res.append("N"+str(nums.index(st_num)))
+                # elif nums.count(st_num) > 1:
+                #     res.append("N"+str(nums.index(st_num)))
                 else:
                     res.append(st_num)
                 if p_end < len(st):
@@ -1068,7 +1070,8 @@ def transfer_num(data, tokenizer, mask=False, trainset=False):
 
         out_seq = seg_and_tag(equation)
         out_seq_infix = out_seq
-        out_seq_prefix = from_infix_to_prefix(out_seq) 
+        out_seq_prefix = from_infix_to_prefix(out_seq)
+
         '''
         if ignore:
             seg = list(jieba.cut(s))
@@ -1161,7 +1164,7 @@ def transfer_num(data, tokenizer, mask=False, trainset=False):
             'inter_prefix':inter_prefix,# 可解释性标注的前序遍历logic
         })
 
-    # generate_num_select = [] #　只选择出现过５次以上的 常量
+    # generate_num_select = [] #　只选择出现过5次以上的 常量
     # for g in generate_nums:
     #     if generate_nums_dict[g] >= 5:
     #         generate_num_select.append(g)
@@ -1232,8 +1235,12 @@ def transfer_num_delq(data, tokenizer, mask=False, trainset=False):#, ignore=Fal
         nums_fraction = [] # 只记录文本中出现的分数（可重复）
 
         s = line["original_text"]
-        s = del_question(s) # 控制是否mask question
-
+        # 控制是否mask question
+        if "context" in line:
+            s = line["context"]
+        else:
+            s = del_question(s) 
+        
         equation = line["output_original"][2:]
 
         # jieba会把 单空格 自动分出一个token，利用此特性可方便的做出NUM mask

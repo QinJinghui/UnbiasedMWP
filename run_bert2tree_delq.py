@@ -68,15 +68,15 @@ def set_args():
     parser.add_argument('--maskN', action='store_true', default=False)
 
     # 数据相关参数
-    parser.add_argument('--train_data_path', type=str, default="data/InterMWP/train.json")
-    parser.add_argument('--valid_data_path', type=str, default="data/InterMWP/valid.json")
-    parser.add_argument('--test_data_path' , type=str, default="data/InterMWP/test.json")
+    parser.add_argument('--train_path', type=str, default="data/train.json")
+    parser.add_argument('--valid_path', type=str, default="data/valid.json")
+    parser.add_argument('--test_path' , type=str, default="data/test.json")
 
     # 预训练模型路径    
     parser.add_argument('--bert_path', type=str, default="/data3/yangzhicheng/Data/Pretrained_Model/Bert/chinese-bert-wwm")
     
     # 存储相关参数
-    parser.add_argument('--save_path', type=str, default="model/intermwp/bert2tree")
+    parser.add_argument('--save_path', type=str, default="model/unbiasmwp/bert2tree")
     parser.add_argument('--save', action='store_true', default=False)
 
 
@@ -103,13 +103,9 @@ if __name__ == "__main__":
 
     setup_seed(args.seed)
     log_writer = SummaryWriter()
-
     tokenizer = BertTokenizer.from_pretrained(args.bert_path)
-    # logic = read_json(args.logic_path)
-    # logic2newid = read_json(args.logic2newid_path)
-    # newid2logic = {logic2newid[key]:key for key in logic2newid}  
     train_fold, valid_fold, test_fold, generate_nums, copy_nums = \
-        process_data_pipeline_delq(args.train_data_path, args.valid_data_path, args.test_data_path, tokenizer, args.debug, args.maskN)
+        process_data_pipeline_delq(args.train_path, args.valid_path, args.test_path, tokenizer, args.debug, args.maskN)
     print(generate_nums, copy_nums)
     train_steps = args.n_epochs * math.ceil(len(train_fold) / args.batch_size)
     output_lang, train_pairs, valid_pairs, test_pairs = prepare_bert_data(train_fold, valid_fold, test_fold, 5, generate_nums,
@@ -164,6 +160,8 @@ if __name__ == "__main__":
         generate.cuda()
         merge.cuda()
     
+    valid_len = len(read_json(args.valid_path))
+
     best_equ_ac_valid = 0
     best_val_ac_valid = 0
     best_equ_ac_test = 0
@@ -253,29 +251,29 @@ if __name__ == "__main__":
                 if equ_ac:
                     equation_ac += 1
                 eval_total += 1
-            print(equation_ac, value_ac, eval_total)
-            print("valid_answer_acc", float(equation_ac) / eval_total, float(value_ac) / eval_total)
-            best_equ_ac_valid = max(best_equ_ac_valid, float(equation_ac) / eval_total)
-            best_val_ac_valid = max(best_val_ac_valid, float(value_ac) / eval_total)
+            print(equation_ac, value_ac, valid_len)
+            print("valid_answer_acc", float(equation_ac) / valid_len, float(value_ac) / valid_len)
+            best_equ_ac_valid = max(best_equ_ac_valid, float(equation_ac) / valid_len)
+            best_val_ac_valid = max(best_val_ac_valid, float(value_ac) / valid_len)
             print("Best_answer_acc", best_equ_ac_valid, best_val_ac_valid)
             print("validing time", time_since(time.time() - start))
             print("------------------------------------------------------")
 
             with open(logfile, 'a') as file_object:
-                file_object.write("%d %d %d \n"%(equation_ac, value_ac, eval_total))
-                file_object.write("valid_answer_acc: %f %f \n" %( float(equation_ac) / eval_total, float(value_ac) / eval_total) )
+                file_object.write("%d %d %d \n"%(equation_ac, value_ac, valid_len))
+                file_object.write("valid_answer_acc: %f %f \n" %( float(equation_ac) / valid_len, float(value_ac) / valid_len) )
                 file_object.write("Best_answer_acc:  %f %f \n"% (best_equ_ac_valid, best_val_ac_valid))
                 file_object.write("validing time " + str(time_since(time.time() - start)) + "\n")
                 file_object.write("------------------------------------------------------\n")
 
-            is_best_valid = (best_val_ac_valid == float(value_ac)/eval_total)
-            if best_val_ac_valid == float(value_ac)/eval_total and args.save:
+            is_best_valid = (best_val_ac_valid == float(value_ac)/valid_len)
+            if best_val_ac_valid == float(value_ac)/valid_len and args.save:
                 encoder.savebert(args.save_path + "/pytorch_model.bin")
                 torch.save(predict.state_dict(), "%s/predict" % (args.save_path))
                 torch.save(generate.state_dict(), "%s/generate" % (args.save_path))
                 torch.save(merge.state_dict(), "%s/merge" % (args.save_path))
 
-            log_writer.add_scalar('valid/accurate', float(value_ac)/eval_total, epoch)
+            log_writer.add_scalar('valid/accurate', float(value_ac)/valid_len, epoch)
             
             # _____________________________________________________________________________
             if not args.save:
@@ -338,6 +336,7 @@ if __name__ == "__main__":
         
     print("__________________________________________________________________________________________")
     print("## Begin Testing ##")
+    test_len = len(read_json(args.test_path))
     if args.save:
         encoder = Encoder_Bert(bert_path = args.save_path)
         predict.load_state_dict(torch.load(args.save_path + '/predict'))
@@ -370,23 +369,23 @@ if __name__ == "__main__":
             if equ_ac:
                 equation_ac += 1
             test_total += 1
-        print(equation_ac, value_ac, test_total)
-        print("test_acc", float(equation_ac) / test_total, float(value_ac) / test_total)
+        print(equation_ac, value_ac, test_len)
+        print("test_acc", float(equation_ac) / test_len, float(value_ac) / test_len)
         print("testing time", time_since(time.time() - start))
         print("------------------------------------------------------")
 
         with open(logfile, 'a') as file_object:
             file_object.write("Testing...\n")
-            file_object.write("%d %d %d \n"%(equation_ac, value_ac, test_total))
-            file_object.write("test_acc: %f %f \n" %( float(equation_ac) / test_total, float(value_ac) / test_total ) )
+            file_object.write("%d %d %d \n"%(equation_ac, value_ac, test_len))
+            file_object.write("test_acc: %f %f \n" %( float(equation_ac) / test_len, float(value_ac) / test_len ) )
             file_object.write("------------------------------------------------------\n")
     else:
-        print(equation_ac_final, value_ac_final, test_total)
-        print("test_acc", float(equation_ac_final) / test_total, float(value_ac_final) / test_total)
+        print(equation_ac_final, value_ac_final, test_len)
+        print("test_acc", float(equation_ac_final) / test_len, float(value_ac_final) / test_len)
         print("------------------------------------------------------")
         with open(logfile, 'a') as file_object:
             file_object.write("Testing...\n")
-            file_object.write("%d %d %d \n"%(equation_ac_final, value_ac_final, test_total))
-            file_object.write("test_acc: %f %f \n" %( float(equation_ac_final) / test_total, float(value_ac_final) / test_total ) )
+            file_object.write("%d %d %d \n"%(equation_ac_final, value_ac_final, test_len))
+            file_object.write("test_acc: %f %f \n" %( float(equation_ac_final) / test_len, float(value_ac_final) / test_len ) )
             file_object.write("------------------------------------------------------\n")
 

@@ -68,18 +68,15 @@ def set_args():
     parser.add_argument('--maskN', action='store_true', default=False)
 
     # 数据相关参数
-    parser.add_argument('--train_data_path', type=str, default="data/train.json")
-    parser.add_argument('--valid_data_path', type=str, default="data/valid.json")
-    parser.add_argument('--test_data_path' , type=str, default="data/test.json")
-    parser.add_argument('--logic_path' , type=str, default="data/logic.json")
-    parser.add_argument('--logic2newid_path' , type=str, default="data/logic2newid.json")
+    parser.add_argument('--train_path', type=str, default="data/train.json")
+    parser.add_argument('--valid_path', type=str, default="data/valid.json")
+    parser.add_argument('--test_path' , type=str, default="data/test.json")
 
-    # 预训练模型路径
-    parser.add_argument('--embedding_path', type=str, default="embedding/logic_embedding.pt")
+    # 预训练模型路径    
     parser.add_argument('--bert_path', type=str, default="/data3/yangzhicheng/Data/Pretrained_Model/Bert/chinese-bert-wwm")
     
     # 存储相关参数
-    parser.add_argument('--save_path', type=str, default="model/imathwp/baseline")
+    parser.add_argument('--save_path', type=str, default="model/unbiasmwp/bert2tree")
     parser.add_argument('--save', action='store_true', default=False)
 
 
@@ -108,11 +105,11 @@ if __name__ == "__main__":
     log_writer = SummaryWriter()
 
     tokenizer = BertTokenizer.from_pretrained(args.bert_path)
-    logic = read_json(args.logic_path)
-    logic2newid = read_json(args.logic2newid_path)
-    newid2logic = {logic2newid[key]:key for key in logic2newid}  
+    # logic = read_json(args.logic_path)
+    # logic2newid = read_json(args.logic2newid_path)
+    # newid2logic = {logic2newid[key]:key for key in logic2newid}  
     train_fold, valid_fold, test_fold, generate_nums, copy_nums = \
-        process_data_pipeline(args.train_data_path, args.valid_data_path, args.test_data_path, tokenizer, logic, logic2newid, args.debug, args.maskN)
+        process_data_pipeline(args.train_path, args.valid_path, args.test_path, tokenizer, args.debug, args.maskN)
     print(generate_nums, copy_nums)
     train_steps = args.n_epochs * math.ceil(len(train_fold) / args.batch_size)
     output_lang, train_pairs, valid_pairs, test_pairs = prepare_bert_data(train_fold, valid_fold, test_fold, 5, generate_nums,
@@ -177,54 +174,58 @@ if __name__ == "__main__":
     test_total = 0
 
     logfile = args.save_path + '/log'
-    with open(logfile, 'w') as file_object:
-        file_object.write("training procedure log \n")
-
-    train_data = MathWP_Dataset(train_pairs)
-    train_data_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=my_collate)
         
     print("__________________________________________________________________________________________")
     print("## Begin Testing ##")
+    if args.save:
+        encoder = Encoder_Bert(bert_path = args.save_path)
+        predict.load_state_dict(torch.load(args.save_path + '/predict'))
+        generate.load_state_dict(torch.load(args.save_path + '/generate'))
+        merge.load_state_dict(torch.load(args.save_path + '/merge'))
 
-    encoder = Encoder_Bert(bert_path = args.save_path)
-    predict.load_state_dict(torch.load(args.save_path + '/predict'))
-    generate.load_state_dict(torch.load(args.save_path + '/generate'))
-    merge.load_state_dict(torch.load(args.save_path + '/merge'))
+        # Move models to GPU
+        if USE_CUDA:
+            encoder.cuda()
+            predict.cuda()
+            generate.cuda()
+            merge.cuda()
+        
+        value_ac = 0
+        equation_ac = 0
+        test_total = 0
+        start = time.time()
+        for test_batch in tqdm(test_pairs):
+            token_len = len(test_batch["tokens"])
+            test_res = evaluate_tree(generate_num_ids, encoder, predict, generate, merge, 
+                output_lang, test_batch["num_idx"], 
+                [test_batch["token_ids"][:token_len]], 
+                [test_batch["token_type_ids"][:token_len]], 
+                [test_batch["attention_mask"][:token_len]], 
+                token_len, beam_size = args.beam_size)
+            val_ac, equ_ac, _, _ = compute_prefix_tree_result(test_res, test_batch["output"], 
+                output_lang, test_batch["nums"])
+            if val_ac:
+                value_ac += 1
+            if equ_ac:
+                equation_ac += 1
+            test_total += 1
+        print(equation_ac, value_ac, test_total)
+        print("test_acc", float(equation_ac) / test_total, float(value_ac) / test_total)
+        print("testing time", time_since(time.time() - start))
+        print("------------------------------------------------------")
 
-    # Move models to GPU
-    if USE_CUDA:
-        encoder.cuda()
-        predict.cuda()
-        generate.cuda()
-        merge.cuda()
-    
-    value_ac = 0
-    equation_ac = 0
-    test_total = 0
-    start = time.time()
-    predicts = []
-    baseline_val_acc = []
-    for test_batch in tqdm(test_pairs):
-        token_len = len(test_batch["tokens"])
-        test_res = evaluate_tree(generate_num_ids, encoder, predict, generate, merge, 
-            output_lang, test_batch["num_idx"], 
-            [test_batch["token_ids"][:token_len]], 
-            [test_batch["token_type_ids"][:token_len]], 
-            [test_batch["attention_mask"][:token_len]], 
-            token_len, beam_size = args.beam_size)
-        predicts.append(test_res)
-        val_ac, equ_ac, _, _ = compute_prefix_tree_result(test_res, test_batch["output"], 
-            output_lang, test_batch["nums"])
-        baseline_val_acc.append(val_ac)
-        if val_ac:
-            value_ac += 1
-        if equ_ac:
-            equation_ac += 1
-        test_total += 1
-    # print(equation_ac, value_ac, test_total)
-    print("test_acc", float(value_ac) / test_total)
-    print("testing time", time_since(time.time() - start))
-    print("------------------------------------------------------")
-    write_json(args.save_path + '/predicts_baseline.json', predicts)
-    write_json('baseline_val_acc.json', baseline_val_acc)
-    
+        with open(logfile, 'a') as file_object:
+            file_object.write("Testing...\n")
+            file_object.write("%d %d %d \n"%(equation_ac, value_ac, test_total))
+            file_object.write("test_acc: %f %f \n" %( float(equation_ac) / test_total, float(value_ac) / test_total ) )
+            file_object.write("------------------------------------------------------\n")
+    else:
+        print(equation_ac_final, value_ac_final, test_total)
+        print("test_acc", float(equation_ac_final) / test_total, float(value_ac_final) / test_total)
+        print("------------------------------------------------------")
+        with open(logfile, 'a') as file_object:
+            file_object.write("Testing...\n")
+            file_object.write("%d %d %d \n"%(equation_ac_final, value_ac_final, test_total))
+            file_object.write("test_acc: %f %f \n" %( float(equation_ac_final) / test_total, float(value_ac_final) / test_total ) )
+            file_object.write("------------------------------------------------------\n")
+
