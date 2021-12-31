@@ -64,6 +64,7 @@ def set_args():
     parser.add_argument('--weight_decay', type=float, default=1e-5)
 
     # 训练控制相关
+    parser.add_argument('--teacher_rate', type=float, default=0.5)
     parser.add_argument('--debug', action='store_true', default=False)
     parser.add_argument('--maskN', action='store_true', default=False)
 
@@ -181,6 +182,11 @@ if __name__ == "__main__":
     train_data_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=my_collate)
 
     for epoch in range(args.n_epochs):
+        if epoch < args.teacher_rate * args.n_epochs:
+            train_function = train_tree_em
+        else:
+            train_function = train_tree_em
+        
         start = time.time()
         random.seed(epoch + args.seed) 
         loss_total = 0
@@ -191,7 +197,7 @@ if __name__ == "__main__":
         num_accurate = 0
 
         for batch in tqdm(train_data_loader):
-            loss, accurate = train_tree(batch["output"], batch["output_len"], 
+            loss, accurate = train_function(batch["output"], batch["output_len"], 
                 batch["num_size"], generate_nums,
                 encoder, predict, generate, merge, encoder_optimizer, encoder_scheduler, 
                 predict_optimizer, generate_optimizer,

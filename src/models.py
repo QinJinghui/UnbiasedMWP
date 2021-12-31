@@ -604,37 +604,37 @@ class GenerateNode(nn.Module):
         r_child = r_child * r_child_g
         return l_child, r_child, node_op_label_
 
-class GenerateNodeAndInter(nn.Module):
-    def __init__(self, hidden_size, op_nums, embedding_size, dropout=0.5):
-        super(GenerateNode, self).__init__()
+# class GenerateNodeAndInter(nn.Module):
+#     def __init__(self, hidden_size, op_nums, embedding_size, dropout=0.5):
+#         super(GenerateNode, self).__init__()
 
-        self.embedding_size = embedding_size
-        self.hidden_size = hidden_size
+#         self.embedding_size = embedding_size
+#         self.hidden_size = hidden_size
         
-        # operator vector
-        self.embeddings = nn.Embedding(op_nums, embedding_size) 
-        self.em_dropout = nn.Dropout(dropout)
-        self.generate_l = nn.Linear(hidden_size * 2 + embedding_size, hidden_size)
-        self.generate_r = nn.Linear(hidden_size * 2 + embedding_size, hidden_size)
-        self.generate_lg = nn.Linear(hidden_size * 2 + embedding_size, hidden_size)
-        self.generate_rg = nn.Linear(hidden_size * 2 + embedding_size, hidden_size)
+#         # operator vector
+#         self.embeddings = nn.Embedding(op_nums, embedding_size) 
+#         self.em_dropout = nn.Dropout(dropout)
+#         self.generate_l = nn.Linear(hidden_size * 2 + embedding_size, hidden_size)
+#         self.generate_r = nn.Linear(hidden_size * 2 + embedding_size, hidden_size)
+#         self.generate_lg = nn.Linear(hidden_size * 2 + embedding_size, hidden_size)
+#         self.generate_rg = nn.Linear(hidden_size * 2 + embedding_size, hidden_size)
 
-    def forward(self, node_embedding, node_op_label, current_context):
-        node_op_label_ = self.embeddings(node_op_label)
-        node_op_label = self.em_dropout(node_op_label_)
-        node_embedding = node_embedding.squeeze(1) # B x H
-        current_context = current_context.squeeze(1) # B x H
-        node_embedding = self.em_dropout(node_embedding)
-        current_context = self.em_dropout(current_context)
+#     def forward(self, node_embedding, node_op_label, current_context):
+#         node_op_label_ = self.embeddings(node_op_label)
+#         node_op_label = self.em_dropout(node_op_label_)
+#         node_embedding = node_embedding.squeeze(1) # B x H
+#         current_context = current_context.squeeze(1) # B x H
+#         node_embedding = self.em_dropout(node_embedding)
+#         current_context = self.em_dropout(current_context)
 
-        concate_all = torch.cat((node_embedding, current_context, node_op_label), 1)
-        l_child = torch.tanh(self.generate_l(concate_all))
-        l_child_g = torch.sigmoid(self.generate_lg(concate_all))
-        r_child = torch.tanh(self.generate_r(concate_all))
-        r_child_g = torch.sigmoid(self.generate_rg(concate_all))
-        l_child = l_child * l_child_g
-        r_child = r_child * r_child_g
-        return l_child, r_child, node_op_label_
+#         concate_all = torch.cat((node_embedding, current_context, node_op_label), 1)
+#         l_child = torch.tanh(self.generate_l(concate_all))
+#         l_child_g = torch.sigmoid(self.generate_lg(concate_all))
+#         r_child = torch.tanh(self.generate_r(concate_all))
+#         r_child_g = torch.sigmoid(self.generate_rg(concate_all))
+#         l_child = l_child * l_child_g
+#         r_child = r_child * r_child_g
+#         return l_child, r_child, node_op_label_
 
 class Merge(nn.Module):
     def __init__(self, hidden_size, embedding_size, dropout=0.5):

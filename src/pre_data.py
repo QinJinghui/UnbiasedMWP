@@ -90,9 +90,8 @@ class Lang:
     #         self.word2index[j] = i
 
     def build_output_lang_for_tree(self, generate_num, copy_nums):  # build the output lang vocab and dict
-        self.num_start = len(self.index2word)
-
-        self.index2word = self.index2word + generate_num + ["N" + str(i) for i in range(copy_nums)] + ["[UNK]"]
+        self.num_start = len(self.index2word) + 1
+        self.index2word = ["[PAD]"] + self.index2word + generate_num + ["N" + str(i) for i in range(copy_nums)] + ["[UNK]"]
         self.n_words = len(self.index2word)
 
         for i, j in enumerate(self.index2word):
@@ -935,6 +934,13 @@ def q_num(question_):
         pos = re.search(pattern, question)
     return num_count
 
+def expression_tree(output):
+    tree = {}
+    return tree
+
+def equivalent_expression(output):
+    equ_list = [output]
+    return equ_list
 """
 面向数据:(仅考虑最基础的数据) # 中英文均可
 {
