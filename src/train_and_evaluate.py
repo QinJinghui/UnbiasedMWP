@@ -382,7 +382,7 @@ def train_tree(output, output_len, num_size, generate_nums,
     merge_optimizer.step()
     return loss.item(), accurate.item()
 
-def train_tree_em(output, output_len, num_size, generate_nums,
+def train_tree_em(output, output_list, output_len, num_size, generate_nums,
                encoder, predict, generate, merge, encoder_optimizer, encoder_scheduler, 
                predict_optimizer, generate_optimizer,
                merge_optimizer, output_lang, num_idx, 
