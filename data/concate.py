@@ -103,7 +103,7 @@ def output_original(nums, infix):
     for i in range(len(original)):
         if original[i][0] == 'N':
             original[i] = nums[int(original[i][1:])]
-    return ' '.join(original)
+    return 'x=' + ''.join(original)
 
 def process_ano_line(line):
     processed_lines_all = list()

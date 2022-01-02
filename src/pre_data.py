@@ -25,6 +25,65 @@ class MathWP_Dataset(Dataset):
     def __getitem__(self, index):
         return self.data[index]
 
+
+def pad_output_seq(seq, max_length, PAD_token):
+    # PAD_token = 0
+    seq = [line+[PAD_token for _ in range(max_length-len(line))] for line in seq]
+    return seq # B x L
+
+
+def pad_output_seq_list(seq_list, max_length, PAD_token):
+    # PAD_token = 0
+    seq_list = [pad_output_seq(line_list, max_length, PAD_token) for line_list in seq_list]
+    return seq_list # B x [] x L
+
+
+def my_collate(batch_line):
+    batch_line = deepcopy(batch_line)
+    token_len = []
+    token_ids = []
+    token_type_ids = []
+    attention_mask = []
+    output = []
+    output_list = []
+    output_len = []
+    inter = []
+    nums = []
+    num_size = []
+    num_idx = []
+    ids = []
+
+    for line in batch_line:
+        token_len.append(len(line["tokens"]))
+        token_ids.append(line["token_ids"])
+        token_type_ids.append(line["token_type_ids"])
+        attention_mask.append(line["attention_mask"])
+        output.append(line["output"])
+        output_len.append(len(line["output"]))
+        output_list.append(line["output_list"])
+        inter.append(line["inter_prefix"])
+        nums.append(line["nums"])
+        num_size.append(len(line["nums"]))
+        num_idx.append(line["num_idx"])
+        ids.append(line["id"])
+
+    batch = {
+        "max_token_len": max(token_len),
+        "token_ids": [line[:max(token_len)] for line in token_ids],
+        "token_type_ids": [line[:max(token_len)] for line in token_type_ids],
+        "attention_mask": [line[:max(token_len)] for line in attention_mask],
+        "output": pad_output_seq(output, max(output_len), 0),
+        "output_list":pad_output_seq_list(output_list, max(output_len), 0),
+        "output_len":output_len,
+        "inter": pad_output_seq(inter, max(output_len), -1),
+        "nums": nums,
+        "num_size":num_size,
+        "num_idx": num_idx,
+        "id":ids,   
+    }
+    return batch
+
+
 class Lang:
     """
     class to save the vocab and two dict: the word->index and index->word
@@ -165,293 +224,6 @@ def from_infix_to_prefix(expression):
     res.reverse()
     return res
 
-"""
-面向数据:(仅考虑最基础的数据)
-{
-"id":"1",
-"original_text":"镇海雅乐学校二年级的小朋友到一条小路的一边植树．小朋友们每隔2米种一棵树（马路两头都种了树），最后发现一共种了11棵，这条小路长多少米．",
-"equation":"x=(11-1)*2",
-"ans":"20"
-}
-
-输出数据:
-pairs.append({
-    'original_text':line["original_text"].strip().split(" "),
-    'input': seg, # 对数字改为[NUM]后的input列表
-    'output': out_seq_prefix, # 中序遍历后的表达式
-    'nums': nums, # 按顺序记录出现的数字 
-    'num_pos': num_pos, # 记录input列表中出现[NUM]的下标
-    'id':line['id'],
-    # 'interpretation': interpretation, # 可解释性标注
-})
-"""
-def transfer_num_jieba(data, ignore=False):  
-    pattern = re.compile("\d*\(\d+/\d+\)\d*|\d+\.\d+%?|\d+%?")
-    pairs = []
-    generate_nums = []
-    generate_nums_dict = {}
-    count_num_max = 0 # 一句话里最多有多少个[NUM]
-
-    ignore_all = 0
-    ignore_output_len = 0
-    ignore_math = 0
-    ignore_const = 0
-    ignore_op = 0
-
-    for line in data:
-        # print(line['id'])
-
-        nums = [] # 按顺序记录文本中所有出现的数字（可重复）
-        nums_fraction = [] # 只记录文本中出现的分数（可重复）
-
-        s = ' '.join(line["original_text"].strip().split(" "))
-        equation = line["equation"][2:]
-
-        # jieba会把 单空格 自动分出一个token，利用此特性可方便的做出[NUM] mask
-        pos = re.search(pattern, s)
-        while(pos):
-            nums.append(s[pos.start():pos.end()])
-            s = s[:pos.start()] + ' ' + s[pos.end():]
-            pos = re.search(pattern, s)
-        
-        for num in nums:
-            if re.search("\d*\(\d+/\d+\)\d*", num):
-                nums_fraction.append(num)
-        nums_fraction = sorted(nums_fraction, key=lambda x: len(x), reverse=True)
-
-        seg = list(jieba.cut(s))
-        seg = ['[NUM]' if d == ' ' else d for d in seg]
-
-        def seg_and_tag(st):  # seg the equation and tag the num
-            res = []
-            for n in nums_fraction:
-                if n in st:
-                    p_start = st.find(n)
-                    p_end = p_start + len(n)
-                    if p_start > 0:
-                        res += seg_and_tag(st[:p_start])
-                    if nums.count(n) == 1: # 如果只出现一次
-                        res.append("N"+str(nums.index(n)))
-                    else:
-                        res.append(n)
-                    if p_end < len(st):
-                        res += seg_and_tag(st[p_end:])
-                    return res
-            pos_st = re.search("\d+\.\d+%?|\d+%?", st)
-            if pos_st:
-                p_start = pos_st.start()
-                p_end = pos_st.end()
-                if p_start > 0:
-                    res += seg_and_tag(st[:p_start])
-                st_num = st[p_start:p_end]
-                if nums.count(st_num) == 1:
-                    res.append("N"+str(nums.index(st_num)))
-                else:
-                    res.append(st_num)
-                if p_end < len(st):
-                    res += seg_and_tag(st[p_end:])
-                return res
-            for ss in st:
-                res.append(ss)
-            return res
-
-        out_seq = seg_and_tag(equation)
-        out_seq_infix = out_seq
-        out_seq_prefix = from_infix_to_prefix(out_seq) 
-
-        if ignore:
-            # 忽略不是1, 2, 3.14的常数
-            IGNORE = False
-            for op in out_seq:
-                pattern = re.compile("\d*\(\d+/\d+\)\d*|\d+\.\d+%?|\d+%?")
-                pos = re.search(pattern, op)
-                if pos and pos.start() == 0 and op not in ['1', '2', '3.14']: # ['1', '2', '3.14']
-                    IGNORE = True
-                    break
-            if IGNORE:
-                ignore_const += 1
-                continue
-            # ------------------------------------------
-            # 忽略纯数学问题
-            IGNORE = False
-            for t in seg:
-                if t in ['+', '-', '*', '余数', '商', '积', '除数', '被除数', '因数']:
-                    IGNORE = True
-                    break
-            if IGNORE:
-                # print(line["original_text"])
-                ignore_math += 1
-                continue
-            # ------------------------------------------
-            # 忽略奇怪操作符
-            for op in out_seq_prefix:
-                if op[0] == 'N' or op in ['1', '2', '3.14', '+', '-', '*', '/']:
-                    continue
-                else:
-                    IGNORE = True
-                    break
-            if IGNORE:
-                # print(out_seq_prefix)
-                ignore_op += 1
-                continue
-            # ------------------------------------------
-            # 忽略表达式长于9的, 忽略抽取数字个数多于5的
-            if len(out_seq_prefix) > 9 or len(nums) > 5: # 建议len(nums)>选择5,6,7
-                ignore_output_len += 1
-                continue
-            # ------------------------------------------
-
-        count_num_max = max(count_num_max, len(nums))
-
-        for s in out_seq:  # tag the num which is generated
-            if s[0].isdigit() and s not in generate_nums and s not in nums:
-                generate_nums.append(s)
-                generate_nums_dict[s] = 0
-            if s in generate_nums and s not in nums:
-                generate_nums_dict[s] = generate_nums_dict[s] + 1
-
-        num_pos = []
-        for i, j in enumerate(seg):
-            if j == "[NUM]":
-                num_pos.append(i)
-        assert len(nums) == len(num_pos)
-
-        # 可解释性数据接口
-        interpretation = {}# create_interpretation({}, out_seq_prefix, 0)[0]
-
-        pairs.append({
-            'original_text':line["original_text"].strip().split(" "),
-            'input': seg, # 对数字改为[NUM]后的input列表
-            'output': out_seq_prefix, # 中序遍历后的表达式
-            'nums': nums, # 按顺序记录出现的数字 
-            'num_pos': num_pos, # 记录input列表中出现[NUM]的下标
-            'id':line['id'],
-            # 'interpretation': interpretation, # 可解释性标注
-        })
-
-    ignore_all = ignore_const + ignore_output_len + ignore_math + ignore_op
-    ignore_list = [ignore_all, ignore_const, ignore_output_len, ignore_math, ignore_op]
-
-    generate_num_select = [] #　只选择出现过５次以上的 生成数
-    for g in generate_nums:
-        if generate_nums_dict[g] >= 5:
-            generate_num_select.append(g)
-
-    return pairs, generate_num_select, count_num_max, ignore_list
-
-
-def create_interpretation(root, output_prefix, idx):
-    inter = {
-        "logic": "",
-        "op": "",
-        "left": {},
-        "right": {}
-    } 
-    # print(idx)
-    # print(output_prefix[idx], output_prefix)
-    if output_prefix[idx] in ['+', '-', '*', '/', '^']:
-        inter["logic"] = ""
-        inter["op"] = output_prefix[idx]
-        # print("left")
-        left_tree = create_interpretation(root, output_prefix, idx+1)
-        inter["left"] = left_tree[0]
-        # print("right")
-        right_tree = create_interpretation(root, output_prefix, left_tree[1])
-        inter["right"] = right_tree[0]
-        # print(root)
-        return (inter, right_tree[1])
-    else: 
-        inter["logic"] = "0"
-        inter["op"] = output_prefix[idx]
-        # print("LEAF")
-        # print(root)
-        return (inter, idx+1)
-
-
-"""
-面向数据:(仅考虑最基础的数据)
-{
-"id":"1",
-"original_text":"镇海雅乐学校二年级的小朋友到一条小路的一边植树．小朋友们每隔2米种一棵树（马路两头都种了树），最后发现一共种了11棵，这条小路长多少米．",
-"equation":"x=(11-1)*2",
-"ans":"20"
-}
-
-输出数据:
-pairs.append({
-    'original_text':line["original_text"].strip().split(" "),
-    'input': mask_seq, # 对数字改为[NUM]后的input列表
-    'output': out_seq_prefix, # 中序遍历后的表达式
-    'nums': nums, # 按顺序记录出现的数字 
-    'num_pos': num_pos, # 记录input列表中出现[NUM]的下标
-    'id':line['id'],
-    # 'interpretation': interpretation, # 可解释性标注
-})
-"""
-def process_data_pipeline_jieba(train_data_path, valid_data_path, test_data_path, debug=False, ignore=False):
-    train_data = read_json(train_data_path)
-    valid_data = read_json(valid_data_path)
-    if test_data_path:
-        test_data = read_json(test_data_path)
-    else:
-        test_data = []
-
-    if debug:
-        train_data = train_data[:1000]
-        valid_data = valid_data[:30]
-        test_data = test_data[:30]
-
-    train_data, generate_nums, copy_nums, ignore_list_train = transfer_num_jieba(train_data, ignore)
-    valid_data, _, _, ignore_list_valid = transfer_num_jieba(valid_data, ignore)
-    test_data, _, _, ignore_list_test = transfer_num_jieba(test_data, ignore)
-
-    ignore_list = [ignore_list_train, ignore_list_valid, ignore_list_test]
-    return train_data, valid_data, test_data, generate_nums, copy_nums, ignore_list
-
-
-"""
-data格式:{
-    "tokens":tokens,
-    "num_idx":num_idx,
-}
-"""
-def indexes_from_sentence_input_jieba(pair, tokenizer, tree=False):
-    # [CLS] + tokens + [SEP]
-    pair['input'] = ['[CLS]'] + pair['input'] + ['[SEP]']
-    
-    """
-    data格式:{
-        'original_text': d['segmented_text'].strip().split(" "),
-        'input': input_seq, # 对数字改为[NUM]后的input列表
-        'output': out_seq, # 中序遍历后的表达式
-        'nums': nums, # 按顺序记录出现的数字 
-        'num_pos': num_pos, # 记录input列表中出现[NUM]的下标
-        'id': d['id'],
-    } 
-    """
-    idx = 0
-    num_idx = []
-    tokens = [] 
-    for word in pair['input']:
-        if len(word) == 0: #　跳过空的 
-            continue
-        elif word == '[NUM]':
-            num_idx.append(idx)
-            tokens.append(word)
-            idx += 1
-        else:
-            tmp_token = tokenizer.tokenize(word) #[UNK]
-            if tmp_token == []:
-                print("processing ", word, [word])
-                tmp_token = ['[UNK]']
-            tokens += tmp_token
-            idx += len(tmp_token)
-            
-    line = {
-        "tokens":tokens,
-        "num_idx":num_idx,
-    }
-    return line
 
 def indexes_from_sentence_output(lang, sentence, tree=False):
     res = []
@@ -471,429 +243,13 @@ def indexes_from_sentence_output(lang, sentence, tree=False):
     if "EOS" in lang.index2word and not tree:
         res.append(lang.word2index["EOS"])
     return res
-
-
-"""
-data格式:{
-    "tokens":tokens,
-    "num_idx":num_idx,
-    "token_ids": ,
-    "token_type_ids": ,
-    "attention_mask": ,
-    "output": ,
-    "num_stack": ,
-    "nums": ,
-    "id": ,
-    "original_text": ,
-}
-"""
-def prepare_pairs_jieba(pairs, output_lang, tokenizer, max_seq_length, tree=False):
-    PAD_id = tokenizer.pad_token_id
-    processed_pairs = []
-    ignore_input_len = 0
-
-    for pair in pairs:
-        ## 先处理num_stack
-        num_stack = []
-        for word in pair['output']:  # 处理表达式
-            temp_num = []
-            flag_not = True
-            if word not in output_lang.index2word:
-                # print("output lang not find: ", word)
-                flag_not = False
-                for i, j in enumerate(pair['nums']):
-                    if j == word:
-                        temp_num.append(i)
-
-            if not flag_not and len(temp_num) != 0:
-                num_stack.append(temp_num)
-            if not flag_not and len(temp_num) == 0:
-                num_stack.append([_ for _ in range(len(pair["nums"]))])
-
-        num_stack.reverse()
-        """
-        line:{
-            "tokens":tokens,
-            "num_idx":num_idx,
-        }
-        """
-        ##　此处可添加的num_pos, group, ..., noun等都是基于input_cell的下标
-        line = indexes_from_sentence_input_jieba(pair, tokenizer, tree=tree) 
-
-        # 忽略长度＞180的问题, 此处用ignore控制的原因在于：文本过长容易导致内存错误
-        if len(line["tokens"]) > max_seq_length:
-            ignore_input_len += 1
-            continue
-        
-        output_cell = indexes_from_sentence_output(output_lang, pair['output'], tree=tree)   
-
-        token_ids = tokenizer.convert_tokens_to_ids(line["tokens"])
-        token_len = len(token_ids)
-        # Padding 
-        padding_ids = [PAD_id]*(max_seq_length - len(token_ids))
-        token_ids += padding_ids
-        # token_type_ids
-        token_type_ids = [0]*max_seq_length
-        # attention_mask
-        attention_mask = [1]*token_len + padding_ids
-        
-        ### Testing num 
-        for idx in line["num_idx"]:
-            assert line["tokens"][idx] == '[NUM]'
-        
-        line["token_ids"] = token_ids
-        line["token_type_ids"] = token_type_ids
-        line["attention_mask"] = attention_mask
-        line["output"] = output_cell
-        line["num_stack"] = num_stack
-        line["nums"] = pair["nums"]
-        line["id"] = pair["id"]
-        line["original_text"] = pair["original_text"]
-
-        processed_pairs.append(line)
-
-    return processed_pairs, ignore_input_len
-
-
-def prepare_bert_data_jieba(pairs_train, pairs_valid, pairs_test, trim_min_count, generate_nums, 
-                      copy_nums, path, max_seq_length, tree=False):
-    output_lang = Lang()
-
-    # Load Bert-chinese-wwm tokenizer 
-    tokenizer = BertTokenizer.from_pretrained(path)
-    ## build lang
-    print("Tokenizing/Indexing words...")
-    for pair in pairs_train:
-        output_lang.add_sen_to_vocab(pair['output'])
-
-    if tree:
-        output_lang.build_output_lang_for_tree(generate_nums, copy_nums)
-    else:
-        output_lang.build_output_lang(generate_nums, copy_nums)
     
-    print('Indexed %d words in output' % (output_lang.n_words))
-
-    """
-    data格式:{
-        'original_text':d['segmented_text'].strip().split(" "),
-        'input':input_seq, # 对数字改为[NUM]后的input列表
-        'output':out_seq, # 中序遍历后的表达式
-        'nums':nums, # 按顺序记录出现的数字 
-        'num_pos':num_pos, # 记录input列表中出现[NUM]的下标
-        'id':d['id'],
-    } 
-    """
-    train_pairs, ignore_input_len_train = prepare_pairs_jieba(pairs_train, output_lang, tokenizer, max_seq_length, tree)
-    valid_pairs, ignore_input_len_valid = prepare_pairs_jieba(pairs_valid, output_lang, tokenizer, max_seq_length, tree)
-    test_pairs, ignore_input_len_test = prepare_pairs_jieba(pairs_test, output_lang, tokenizer, max_seq_length, tree)
-
-    print('Number of training data %d' % (len(train_pairs)))
-    print('Number of validating data %d' % (len(valid_pairs)))
-    print('Number of testing data %d' % (len(test_pairs)))
-    
-    ignore_len_list = [ignore_input_len_train ,ignore_input_len_valid, ignore_input_len_test]
-    return output_lang, train_pairs, valid_pairs, test_pairs, ignore_len_list
-
-def find_inter_prefix(interpretation, inter_prefix, logic, logic2newid):
-    if interpretation == {}:
-        return
-    logic_str = logic[interpretation["logic"]]
-    if logic_str in logic2newid:
-        inter_prefix.append(int(logic2newid[logic_str]))
-    else:
-        inter_prefix.append(-1)
-    find_inter_prefix(interpretation["left"], inter_prefix, logic, logic2newid)
-    find_inter_prefix(interpretation["right"], inter_prefix, logic, logic2newid)
-
-
 def word_is_ignore(words, ignore):
     for ig in ignore:
         if ig in words:
             return True
     return False
     
-"""
-面向数据:(仅考虑最基础的数据) # 中英文均可
-{
-    "id":"1",
-    "original_text":"镇海雅乐学校二年级的小朋友到一条小路的一边植树．小朋友们每隔2米种一棵树（马路两头都种了树），最后发现一共种了11棵，这条小路长多少米．",
-    "equation":"x=(11-1)*2",
-    "ans":"20"
-}
-
-输出数据:
-{
-    'original_text':line["original_text"].strip().split(" "),
-    'tokens': tokens, # 对数字改为[NUM]后的token列表
-    'output': line["output_prefix"].split(" "),# 先序遍历后的表达式
-    'nums': line["nums"].split(' '), # 按顺序记录出现的数字 
-    'num_idx': num_idx, # 记录input列表中出现[NUM]的下标
-    'id':line['id'],
-    'interpretation': line["interpretation"], # 可解释性标注
-    'inter_prefix':inter_prefix,# 可解释性标注的前序遍历logic
-}
-"""
-def transfer_num_inter(data, tokenizer, logic, logic2newid, mask=False):#, ignore=False):  
-    pattern = re.compile("\d*\(\d+/\d+\)\d*|\d+\.\d+%?|\d+%?")
-    attr_use = ["n", "t", "nr", "ns", "nt", "PER", "LOC", "TIME"]
-    ignore_ch = [",", "，", ".", "。", "?", "？", "!", "！", ":", "：", "、", ";", "；", "．", 
-        "+", "-", "*", "/", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "(", ")", 
-        "N", "NUM"]
-
-    pairs = []
-    generate_nums = ['1', '2', '3.14', '4']
-    generate_nums_dict = {'1':0, '2':0, '3.14':0, '4':0}
-    count_num_max = 0 # 一句话里最多有多少个[NUM]
-
-    # ignore_all = 0
-    # ignore_output_len = 0
-    # ignore_math = 0
-    # ignore_const = 0
-    # ignore_op = 0
-
-    for line in data:
-        ## *** 对数据集有一个假设:
-        ##      equation中数字的形式和文本一样,不然该函数无法提取equation中的数字
-        
-        nums = [] # 按顺序记录文本中所有出现的数字（可重复）--str
-        nums_fraction = [] # 只记录文本中出现的分数（可重复）
-
-        s = line["original_text"]
-        equation = line["output_original"][2:]
-
-        # jieba会把 单空格 自动分出一个token，利用此特性可方便的做出NUM mask
-        pos = re.search(pattern, s)
-        while(pos):
-            nums.append(s[pos.start():pos.end()])
-            s = s[:pos.start()] + ' [NUM] ' + s[pos.end():] # 将数字改写为[NUM] token
-            pos = re.search(pattern, s)
-        # mask_seq = s.split(' ') 
-        
-        if mask:    
-            pseg_attr = pseg.cut(s,use_paddle=True) #paddle模式
-            seg = jieba.tokenize(s)
-            seg = [t[0] for t in seg]
-            
-            words_attr = {}
-            for word, flag in pseg_attr:   
-                words_attr[word] = flag
-
-            mask_list = []
-            for w in seg:
-                if w in words_attr and words_attr[w] in attr_use and not word_is_ignore(w, ignore_ch):
-                    mask_list.append('[MASK]')
-                else:
-                    mask_list.append(w)
-            
-            mask_text = ''.join(mask_list)
-            s = mask_text
-
-        for num in nums:
-            if re.search("\d*\(\d+/\d+\)\d*", num):
-                nums_fraction.append(num)
-        nums_fraction = sorted(nums_fraction, key=lambda x: len(x), reverse=True)
-        
-
-        tokens = [] # 最终 tokens
-        match_list = []
-        num_token = '[num]' # 被tokenizer处理为小写了
-        tokens_initial = tokenizer.tokenize(s) # 先使用tokenizer进行初步切割
-        # 假设: 被tokenizer切割的'[NUM]'token, 必定以'['开始,以']'结束
-        for t in tokens_initial:
-            match_text = ''.join(match_list).replace('#', '')
-            text_now = match_text + t.replace('#', '')
-            if text_now == num_token: # 完全匹配则直接加入
-                tokens.append('[NUM]')
-                match_list = []
-            elif num_token.startswith(text_now): # 匹配前缀
-                match_list.append(t)
-            else:
-                tokens += match_list
-                match_list = []
-                if num_token.startswith(t.replace('#', '')):
-                    match_list.append(t)
-                else:
-                    tokens.append(t)
-
-        tokens = ['[CLS]'] + tokens + ['[SEP]']
-
-        def seg_and_tag(st):  # seg the equation and tag the num
-            res = []
-            for n in nums_fraction:
-                if n in st:
-                    p_start = st.find(n)
-                    p_end = p_start + len(n)
-                    if p_start > 0:
-                        res += seg_and_tag(st[:p_start])
-                    if nums.count(n) == 1: # 如果只出现一次
-                        res.append("N"+str(nums.index(n)))
-                    else:
-                        res.append(n)
-                    if p_end < len(st):
-                        res += seg_and_tag(st[p_end:])
-                    return res
-            pos_st = re.search("\d+\.\d+%?|\d+%?", st)
-            if pos_st:
-                p_start = pos_st.start()
-                p_end = pos_st.end()
-                if p_start > 0:
-                    res += seg_and_tag(st[:p_start])
-                st_num = st[p_start:p_end]
-                if nums.count(st_num) == 1:
-                    res.append("N"+str(nums.index(st_num)))
-                else:
-                    res.append(st_num)
-                if p_end < len(st):
-                    res += seg_and_tag(st[p_end:])
-                return res
-            for ss in st:
-                res.append(ss)
-            return res
-
-        # out_seq = seg_and_tag(equation)
-        # out_seq_infix = out_seq
-        # out_seq_prefix = from_infix_to_prefix(out_seq) 
-        '''
-        if ignore:
-            seg = list(jieba.cut(s))
-
-            # 忽略不是1, 2, 3.14的常数
-            IGNORE = False
-            for op in out_seq:
-                pattern = re.compile("\d*\(\d+/\d+\)\d*|\d+\.\d+%?|\d+%?")
-                pos = re.search(pattern, op)
-                if pos and pos.start() == 0 and op not in ['1', '2', '3.14']:
-                    IGNORE = True
-                    break
-            if IGNORE:
-                ignore_const += 1
-                continue
-            # ------------------------------------------
-            # 忽略纯数学问题
-            for t in mask_seq:
-                if t in ['+', '-', '*', 'residue', 'quotient', 'product', 'divisor', 'dividend']:
-                    IGNORE = True
-                    break
-            for t in seg:
-                if t in ['+', '-', '*', '余数', '商', '积', '除数', '被除数', '因数']:
-                    IGNORE = True
-                    break
-            """
-            for word in ['余数', '商', '积', '除数', '被除数', '因数']:
-                if word in seg["original_text"]: # 这样子做会将 "商店有10本书..."这种文本识别为IGNORE
-                    print(word)
-                    IGNORE = True
-                    break
-            """
-            if IGNORE:
-                # print(line["original_text"])
-                ignore_math += 1
-                continue
-            # ------------------------------------------
-            # 忽略奇怪操作符
-            for op in out_seq_prefix:
-                if op[0] == 'N' or op in ['1', '2', '3.14', '+', '-', '*', '/']:
-                    continue
-                else:
-                    IGNORE = True
-                    break
-            if IGNORE:
-                # print(out_seq_prefix)
-                ignore_op += 1
-                continue
-            # ------------------------------------------
-            # 忽略表达式长于9的, 忽略抽取数字个数多于5的
-            if len(out_seq_prefix) > 9 or len(nums) > 5: # 建议len(nums)>选择5,6,7
-                ignore_output_len += 1
-                continue
-            # ------------------------------------------
-        '''
-        count_num_max = max(count_num_max, len(nums))
-
-        for s in line["output_prefix"].split(" "):  # tag the num which is generated(文本中未出现的常量)
-            if s[0].isdigit() and s not in generate_nums:
-                generate_nums.append(s)
-                generate_nums_dict[s] = 0
-            if s in generate_nums and s not in nums:
-                generate_nums_dict[s] = generate_nums_dict[s] + 1
-
-        num_idx = []
-        for i, j in enumerate(tokens):
-            if j == "[NUM]":
-                num_idx.append(i)
-        assert len(nums) == len(num_idx)
-        if nums != line["nums"].split(' '):
-            print(line["id"])
-        # if nums != line["nums"].split(' '):
-        #     print(line["id"], nums, line["nums"])
-        # 可解释性数据接口
-        # interpretation = {}# create_interpretation({}, out_seq_prefix, 0)[0]
-        inter_prefix = list()
-        find_inter_prefix(line["interpretation"], inter_prefix, logic, logic2newid)
-        pairs.append({
-            'original_text':line["original_text"].strip().split(" "),
-            'tokens': tokens, # 对数字改为[NUM]后的token列表
-            'output': line["output_prefix"].split(" "),# 先序遍历后的表达式
-            'nums': line["nums"].split(' '), # 按顺序记录出现的数字 
-            'num_idx': num_idx, # 记录input列表中出现[NUM]的下标
-            'id':line['id'],
-            'interpretation': line["interpretation"], # 可解释性标注
-            'inter_prefix':inter_prefix,# 可解释性标注的前序遍历logic
-        })
-
-    # ignore_all = ignore_const + ignore_output_len + ignore_math + ignore_op
-    # ignore_list = [ignore_all, ignore_const, ignore_output_len, ignore_math, ignore_op]
-
-    # generate_num_select = [] #　只选择出现过５次以上的 常量
-    # for g in generate_nums:
-    #     if generate_nums_dict[g] >= 5:
-    #         generate_num_select.append(g)
-    #     else:
-    #         print("find barely used num:", g)
-
-    return pairs, generate_nums, count_num_max#, ignore_list
-
-"""
-面向数据:(仅考虑最基础的数据) # 中英文均适配
-{
-"id":"1",
-"original_text":"镇海雅乐学校二年级的小朋友到一条小路的一边植树．小朋友们每隔2米种一棵树（马路两头都种了树），最后发现一共种了11棵，这条小路长多少米．",
-"equation":"x=(11-1)*2",
-"ans":"20"
-}
-
-输出数据:
-{
-    'original_text':line["original_text"].strip().split(" "),
-    'tokens': tokens, # 对数字改为[NUM]后的token列表
-    'output': line["output_prefix"].split(" "),# 先序遍历后的表达式
-    'nums': line["nums"].split(' '), # 按顺序记录出现的数字 
-    'num_idx': num_idx, # 记录input列表中出现[NUM]的下标
-    'id':line['id'],
-    'interpretation': line["interpretation"], # 可解释性标注
-    'inter_prefix':inter_prefix,# 可解释性标注的前序遍历logic
-}
-"""
-def process_data_pipeline_inter(train_data_path, valid_data_path, test_data_path, tokenizer, logic, logic2newid, debug=False, mask=False):
-    train_data = read_json(train_data_path)
-    valid_data = read_json(valid_data_path)
-    if test_data_path:
-        test_data = read_json(test_data_path)
-    else:
-        test_data = []
-
-    if debug:
-        train_data = train_data[:100]
-        valid_data = valid_data[:30]
-        test_data = test_data[:30]
-
-    train_data, generate_nums, copy_nums = transfer_num_inter(train_data, tokenizer, logic, logic2newid, mask)
-    valid_data, _, _ = transfer_num_inter(valid_data, tokenizer, logic, logic2newid, mask)
-    test_data, _, _ = transfer_num_inter(test_data, tokenizer, logic, logic2newid, mask)
-
-    # ignore_list = [ignore_list_train, ignore_list_valid, ignore_list_test]
-    return train_data, valid_data, test_data, generate_nums, copy_nums#, ignore_list
-
 # 删除问题
 def del_question_old(para):
     para = re.sub('([。！! ， ． . , ？\?])([^”’])', r"\1\n\2", para)  # 单字符断句符
@@ -934,13 +290,76 @@ def q_num(question_):
         pos = re.search(pattern, question)
     return num_count
 
-def expression_tree(output):
-    tree = {}
-    return tree
 
-def equivalent_expression(output):
-    equ_list = [output]
+# 前序遍历建立一颗表达式树
+"""
+{
+    'node': '',
+    'left': {},
+    'right': {}
+}
+"""
+def expression_tree(prefix):
+    tree = {}   
+    if len(prefix) == 0:
+        return tree, prefix
+    tree["node"] = prefix[0]
+    if prefix[0] in ['+', '-', '*', '/', '^']:
+        left, prefix = expression_tree(prefix[1:])
+        tree["left"] = left
+        right, prefix = expression_tree(prefix)
+        tree["right"] = right
+    else:
+        prefix = prefix[1:]
+        tree["left"] = {}
+        tree["right"] = {}
+    return tree, prefix
+
+
+# 根据一颗表达式树,对等价节点左右交换生成等价表达式list
+def variate_tree(tree, root, prefix_all):
+    if root == {}:
+        return 
+        
+    variate_tree(tree, root["left"], prefix_all)
+    variate_tree(tree, root["right"], prefix_all)
+    
+    if root["node"] in ['+', '*']:
+        tmp = root['left'] 
+        root['left'] = root["right"]
+        root["right"] = tmp
+    
+        prefix_all.append(deepcopy(tree))
+    
+        variate_tree(tree, root["left"], prefix_all)
+        variate_tree(tree, root["right"], prefix_all)
+    
+        tmp = root['left'] 
+        root['left'] = root["right"]
+        root["right"] = tmp
+
+
+# 前序遍历表达式树
+def preorder_traversal(tree, prefix):
+    if tree == {}:
+        return 
+    prefix.append(tree["node"])
+    preorder_traversal(tree["left"], prefix)
+    preorder_traversal(tree["right"], prefix)
+
+# 对ground truth前缀表达式构建等价list
+def equivalent_expression(prefix):
+    prefix_tree, _ = expression_tree(prefix)
+    tree_list = [prefix_tree]
+    variate_tree(prefix_tree, prefix_tree, tree_list)
+    equ_list = list()
+    for tree in tree_list:
+        prefix_line = list()
+        preorder_traversal(tree, prefix_line)
+        equ_list.append(prefix_line)
     return equ_list
+
+
 """
 面向数据:(仅考虑最基础的数据) # 中英文均可
 {
@@ -1077,7 +496,6 @@ def transfer_num(data, tokenizer, mask=False, trainset=False):
         out_seq = seg_and_tag(equation)
         out_seq_infix = out_seq
         out_seq_prefix = from_infix_to_prefix(out_seq)
-
         '''
         if ignore:
             seg = list(jieba.cut(s))
@@ -1135,7 +553,8 @@ def transfer_num(data, tokenizer, mask=False, trainset=False):
         '''
         if "output_prefix" in line: # 若字段包含output_prefix,则其一定为ground truth
             out_seq_prefix = line["output_prefix"].split(" ")
-        
+        prefix_list = equivalent_expression(out_seq_prefix)
+
         ignore = False # 筛未检测变量的文本
         for s in out_seq_prefix:  
             if s[0].isdigit() and s not in generate_nums and trainset:
@@ -1155,14 +574,17 @@ def transfer_num(data, tokenizer, mask=False, trainset=False):
         if "nums" in line and nums != line["nums"].split(' '):
             print("Different NUM!", line["id"])
 
-        # 可解释性数据接口
-        # interpretation = {}# create_interpretation({}, out_seq_prefix, 0)[0]
         inter_prefix = list()
-        # find_inter_prefix(line["interpretation"], inter_prefix, logic, logic2newid)
+        # print(equation, out_seq)
+        # print(out_seq_prefix)
+        # print(out_seq_prefix)
+        # print(prefix_list)
+        # print("---------------------------------------------")
         pairs.append({
             'original_text':line["original_text"].strip().split(" "),
             'tokens': tokens, # 对数字改为[NUM]后的token列表
-            'output': out_seq_prefix,# 先序遍历后的表达式
+            'output': out_seq_prefix, # 先序遍历后的表达式
+            'output_list': prefix_list, # 等价表达式list(前序形式)
             'nums': nums, # 按顺序记录出现的数字 
             'num_idx': num_idx, # 记录input列表中出现[NUM]的下标
             'id':line['id'],
@@ -1423,13 +845,8 @@ def transfer_num_delq(data, tokenizer, mask=False, trainset=False):#, ignore=Fal
         
         assert len(nums) == len(num_idx)
 
-        # if "nums" in line and nums != line["nums"].split(' '):
-        #     print("Different NUM!", line["id"], nums, '|', line["nums"].split(' '))
-
         # 可解释性数据接口
-        # interpretation = {}# create_interpretation({}, out_seq_prefix, 0)[0]
         inter_prefix = list()
-        # find_inter_prefix(line["interpretation"], inter_prefix, logic, logic2newid)
         pairs.append({
             'original_text':s,
             'tokens': tokens, # 对数字改为[NUM]后的token列表
@@ -1550,12 +967,12 @@ def prepare_pairs(pairs, output_lang, tokenizer, max_seq_length, tree=False):
 
         # 忽略长度＞180的问题, 此处用ignore控制的原因在于：文本过长容易导致内存错误
         assert len(pair["tokens"]) <= max_seq_length
-        # if len(pair["tokens"]) > max_seq_length:
-        #     print("## input length too long !")
-        #     ignore_input_len += 1
-        #     continue
         
         output_cell = indexes_from_sentence_output(output_lang, pair['output'], tree=tree)   
+
+        output_cell_list = list()
+        for line in pair['output_list']:
+            output_cell_list.append(indexes_from_sentence_output(output_lang, line, tree=tree))
 
         token_ids = tokenizer.convert_tokens_to_ids(pair["tokens"])
         token_len = len(token_ids)
@@ -1575,7 +992,7 @@ def prepare_pairs(pairs, output_lang, tokenizer, max_seq_length, tree=False):
         pair["token_type_ids"] = token_type_ids
         pair["attention_mask"] = attention_mask
         pair["output"] = output_cell
-        # pair["num_stack"] = num_stack
+        pair["output_list"] = output_cell_list
         pair["nums"] = pair["nums"]
         pair["id"] = pair["id"]
         pair["original_text"] = pair["original_text"]
@@ -1585,7 +1002,7 @@ def prepare_pairs(pairs, output_lang, tokenizer, max_seq_length, tree=False):
     return processed_pairs#, ignore_input_len
 
 
-def prepare_bert_data(pairs_train, pairs_valid, pairs_test, trim_min_count, generate_nums, 
+def prepare_bert_data(pairs_train, pairs_valid, pairs_test, generate_nums, 
                       copy_nums, tokenizer, max_seq_length, tree=False):
     output_lang = Lang()
     """
@@ -1622,118 +1039,3 @@ def prepare_bert_data(pairs_train, pairs_valid, pairs_test, trim_min_count, gene
     
     # ignore_len_list = [ignore_input_len_train, ignore_input_len_valid, ignore_input_len_test]
     return output_lang, train_pairs, valid_pairs, test_pairs#, ignore_len_list
-
-
-"""
-data_batch = {
-    "max_token_len": max(token_len),
-    "token_ids": [line[:max(token_len)] for line in token_ids],
-    "token_type_ids": [line[:max(token_len)] for line in token_type_ids],
-    "attention_mask": [line[:max(token_len)] for line in attention_mask],
-    "output": pad_output_seq(output, max(output_len), 0),
-    "output_len": output_len,
-    "inter": pad_output_seq(inter, max(output_len), -1),
-    "nums": nums,
-    "num_size": num_size,
-    "num_idx": num_idx,
-}
-"""
-def prepare_data_Batch(data, batch_size):
-    data = copy.deepcopy(data)
-    ## 准备数据batch
-    random.shuffle(data)
-
-    pos = 0
-    batches = []
-    while pos + batch_size < len(data):
-        batches.append(data[pos:pos+batch_size])
-        pos += batch_size
-    batches.append(data[pos:])
-
-    data = []
-    for batch in batches:
-        token_len = []
-        token_ids = []
-        token_type_ids = []
-        attention_mask = []
-        output = []
-        output_len = []
-        inter = []
-        nums = []
-        num_size = []
-        num_idx = []
-
-        for line in batch:
-            token_len.append(len(line["tokens"]))
-            token_ids.append(line["token_ids"])
-            token_type_ids.append(line["token_type_ids"])
-            attention_mask.append(line["attention_mask"])
-            output.append(line["output"])
-            output_len.append(len(line["output"]))
-            inter.append(line["inter_prefix"])
-            nums.append(line["nums"])
-            num_size.append(len(line["nums"]))
-            num_idx.append(line["num_idx"])
-
-        data_batch = {
-            "max_token_len": max(token_len),
-            "token_ids": [line[:max(token_len)] for line in token_ids],
-            "token_type_ids": [line[:max(token_len)] for line in token_type_ids],
-            "attention_mask": [line[:max(token_len)] for line in attention_mask],
-            "output": pad_output_seq(output, max(output_len), 0),
-            "output_len": output_len,
-            "inter": pad_output_seq(inter, max(output_len), -1),
-            "nums": nums,
-            "num_size": num_size,
-            "num_idx": num_idx,
-        }
-        data.append(data_batch)
-    return data
-
-
-def pad_output_seq(seq, max_length, PAD_token):
-    # PAD_token = 0
-    seq = [line+[PAD_token for _ in range(max_length-len(line))] for line in seq]
-    return seq
-
-def my_collate(batch_line):
-    batch_line = deepcopy(batch_line)
-    token_len = []
-    token_ids = []
-    token_type_ids = []
-    attention_mask = []
-    output = []
-    output_len = []
-    inter = []
-    nums = []
-    num_size = []
-    num_idx = []
-    ids = []
-
-    for line in batch_line:
-        token_len.append(len(line["tokens"]))
-        token_ids.append(line["token_ids"])
-        token_type_ids.append(line["token_type_ids"])
-        attention_mask.append(line["attention_mask"])
-        output.append(line["output"])
-        output_len.append(len(line["output"]))
-        inter.append(line["inter_prefix"])
-        nums.append(line["nums"])
-        num_size.append(len(line["nums"]))
-        num_idx.append(line["num_idx"])
-        ids.append(line["id"])
-
-    batch = {
-        "max_token_len": max(token_len),
-        "token_ids": [line[:max(token_len)] for line in token_ids],
-        "token_type_ids": [line[:max(token_len)] for line in token_type_ids],
-        "attention_mask": [line[:max(token_len)] for line in attention_mask],
-        "output": pad_output_seq(output, max(output_len), 0),
-        "output_len":output_len,
-        "inter": pad_output_seq(inter, max(output_len), -1),
-        "nums": nums,
-        "num_size":num_size,
-        "num_idx": num_idx,
-        "id":ids,   
-    }
-    return batch

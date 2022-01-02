@@ -112,7 +112,7 @@ if __name__ == "__main__":
         process_data_pipeline(args.train_path, args.valid_path, args.test_path, tokenizer, args.debug, args.maskN)
     print(generate_nums, copy_nums)
     train_steps = args.n_epochs * math.ceil(len(train_fold) / args.batch_size)
-    output_lang, train_pairs, valid_pairs, test_pairs = prepare_bert_data(train_fold, valid_fold, test_fold, 5, generate_nums,
+    output_lang, train_pairs, valid_pairs, test_pairs = prepare_bert_data(train_fold, valid_fold, test_fold, generate_nums,
                                                                 copy_nums, tokenizer, args.max_seq_length, tree=True)
     print("output vocab:", output_lang.word2index)
     
