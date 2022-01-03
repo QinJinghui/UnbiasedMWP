@@ -178,10 +178,10 @@ def process_data(ano_data):
         processed_data_limited += lines_limited
         ori_data.append(generate_ori(line))
 
-        if len(ori_data) == 100:
+        if len(ori_data) == 200:
             all_cut1 = len(processed_data_all)
             limited_cut1 = len(processed_data_limited)
-        if len(ori_data) == 200:
+        if len(ori_data) == 400:
             all_cut2 = len(processed_data_all)
             limited_cut2 = len(processed_data_limited)
 
@@ -218,6 +218,6 @@ if __name__ == "__main__":
     write_json("valid_limited.json", limited_data[limited_split[0]:limited_split[1]])
     write_json("test_limited.json", limited_data[:limited_split[0]])
 
-    write_json("train_ori.json", ori_data[200:])
-    write_json("valid_ori.json", ori_data[100:200])
-    write_json("test_ori.json", ori_data[:100])
+    write_json("train_ori.json", ori_data[400:])
+    write_json("valid_ori.json", ori_data[200:400])
+    write_json("test_ori.json", ori_data[:200])
