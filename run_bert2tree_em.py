@@ -181,12 +181,7 @@ if __name__ == "__main__":
     train_data = MathWP_Dataset(train_pairs)
     train_data_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=my_collate)
 
-    for epoch in range(args.n_epochs):
-        if epoch < args.teacher_rate * args.n_epochs:
-            train_function = train_tree_em
-        else:
-            train_function = train_tree_em
-        
+    for epoch in range(args.n_epochs):        
         start = time.time()
         random.seed(epoch + args.seed) 
         loss_total = 0
@@ -197,7 +192,14 @@ if __name__ == "__main__":
         num_accurate = 0
 
         for batch in tqdm(train_data_loader):
-            loss, accurate = train_function(batch["output"], batch["output_len"], 
+            if epoch < args.teacher_rate * args.n_epochs:
+                train_function = train_tree
+                output = batch["output"]
+            else:
+                train_function = train_tree_em
+                output = batch["output_list"]
+
+            loss, accurate = train_function(output, batch["output_len"], 
                 batch["num_size"], generate_nums,
                 encoder, predict, generate, merge, encoder_optimizer, encoder_scheduler, 
                 predict_optimizer, generate_optimizer,
@@ -225,7 +227,7 @@ if __name__ == "__main__":
         log_writer.add_scalar('train/loss', loss_total/len(train_data), epoch)
         log_writer.add_scalar('train/accurate', num_accurate/len(train_pairs), epoch)
         
-        valid_epoch = 5 if epoch<60 else 2
+        valid_epoch = 5 if epoch<0.6*args.n_epochs else 2
         if (epoch+1) % valid_epoch == 0 or epoch > args.n_epochs-5:
             value_ac = 0
             equation_ac = 0

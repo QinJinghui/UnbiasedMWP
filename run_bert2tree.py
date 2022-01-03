@@ -219,7 +219,7 @@ if __name__ == "__main__":
         log_writer.add_scalar('train/loss', loss_total/len(train_data), epoch)
         log_writer.add_scalar('train/accurate', num_accurate/len(train_pairs), epoch)
         
-        valid_epoch = 5 if epoch<60 else 2
+        valid_epoch = 5 if epoch<0.6*args.n_epochs else 2
         if (epoch+1) % valid_epoch == 0 or epoch > args.n_epochs-5:
             value_ac = 0
             equation_ac = 0
