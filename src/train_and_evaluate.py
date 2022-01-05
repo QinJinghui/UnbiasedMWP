@@ -527,6 +527,156 @@ def train_tree_em(output_list, output_len, num_size, generate_nums,
     merge_optimizer.step()
     return loss.item(), accurate.item()
 
+
+# 在生成过程中选择表达式
+def find_max_prefix_generating(all_node_predict, output_list, output_len, target):
+    find_target = []
+    step = len(all_node_predict)
+
+    for p, t, l, exp_list in zip(all_node_predict[-1], target, output_len, output_list):
+        find_target.append(t)
+        # print("add", t)
+        if step > l:
+            continue
+
+        for expression in exp_list:
+            if expression[:step-1] != t[:step-1]:
+                continue
+            if expression[step-1] == p:
+                find_target[-1] = expression
+                break
+                
+    return find_target
+
+
+def train_tree_em2(output_list, output_len, num_size, generate_nums,
+               encoder, predict, generate, merge, encoder_optimizer, encoder_scheduler, 
+               predict_optimizer, generate_optimizer,
+               merge_optimizer, output_lang, num_idx, 
+               token_ids, token_type_ids, attention_mask):
+
+    seq_mask = torch.BoolTensor(attention_mask)
+    seq_mask = (seq_mask == torch.BoolTensor(torch.zeros_like(seq_mask)))
+    num_mask = []
+    max_num_size = max(num_size) + len(generate_nums)
+    for i in num_size:
+        d = i + len(generate_nums)
+        num_mask.append([0] * d + [1] * (max_num_size - d))
+    num_mask = torch.BoolTensor(num_mask)
+
+    unk = output_lang.word2index["[UNK]"]
+
+    # [ [0.0]*predict.hidden_size ]
+    padding_hidden = torch.FloatTensor([0.0 for _ in range(predict.hidden_size)]).unsqueeze(0)
+    batch_size = len(token_ids)
+
+    encoder.train()
+    predict.train()
+    generate.train()
+    merge.train()
+
+    if USE_CUDA:
+        # print("convert tensor to cuda")
+        seq_mask = seq_mask.cuda()
+        padding_hidden = padding_hidden.cuda()
+        num_mask = num_mask.cuda()
+        token_ids = torch.tensor(token_ids, dtype=torch.long).cuda()
+        token_type_ids = torch.tensor(token_type_ids, dtype=torch.long).cuda()
+        attention_mask = torch.tensor(attention_mask, dtype=torch.long).cuda()
+
+    # Zero gradients of both optimizers
+    encoder_optimizer.zero_grad()
+    predict_optimizer.zero_grad()
+    generate_optimizer.zero_grad()
+    merge_optimizer.zero_grad()
+    # Run words through encoder
+
+    encoder_outputs, problem_output = encoder(token_ids, token_type_ids, attention_mask)
+    # Prepare input and output variables
+    node_stacks = [[TreeNode(_)] for _ in problem_output.split(1, dim=0)]
+
+    max_output_len = max(output_len)
+
+    all_node_feature = []
+    all_nums_encoder_outputs = get_all_number_encoder_outputs(encoder_outputs, num_idx, batch_size, max(num_size),
+                                                              encoder.hidden_size)
+
+    all_node_predict = [] # step * batch_size
+    target = [exp[0] for exp in output_list] # batch_size * step
+
+    num_start = output_lang.num_start
+    embeddings_stacks = [[] for _ in range(batch_size)]
+    left_childs = [None for _ in range(batch_size)]
+    for t in range(max_output_len):
+        num_score, op_score, goal, context, all_nums_embeddings = predict(
+            node_stacks, left_childs, encoder_outputs, all_nums_encoder_outputs, padding_hidden, seq_mask, num_mask)
+
+        ## score
+        predict_score = torch.cat((op_score, num_score), 1) # B x Output_size
+        all_node_feature.append(predict_score) # [B x Output_size]
+
+        predict_score_log = functional.log_softmax(predict_score, dim=1)     
+        _, predict_node = torch.max(predict_score_log[:,1:], dim=1)
+        predict_node += 1
+        all_node_predict.append(predict_node.tolist())
+        
+        target = find_max_prefix_generating(all_node_predict, output_list, output_len, target)
+        target_step = [line[t] for line in target]
+        # find target expression
+        # print(all_node_predict)
+        # print(output_list)
+        # print(target)
+        node_op_label = generate_tree_input(target_step, num_start)
+        if USE_CUDA:
+            node_op_label = node_op_label.cuda()
+        # print(node_op_label.shape)
+        left_child, right_child, node_op_embedding = generate(goal, node_op_label, context)
+        left_childs = []
+        for idx, l, r, node_stack, i, o in zip(range(batch_size), left_child.split(1), right_child.split(1),
+                                               node_stacks, target_step, embeddings_stacks):
+            if len(node_stack) != 0:
+                node = node_stack.pop()
+            else:
+                left_childs.append(None)
+                continue
+
+            if i < num_start:
+                node_stack.append(TreeNode(r))
+                node_stack.append(TreeNode(l, left_flag=True))
+                o.append(TreeEmbedding(node_op_embedding[idx].unsqueeze(0), False))
+            else:
+                # print(i - num_start, all_nums_embeddings.shape)
+                current_num = all_nums_embeddings[idx, i - num_start].unsqueeze(0)
+                while len(o) > 0 and o[-1].terminal:
+                    sub_stree = o.pop()
+                    op = o.pop()
+                    current_num = merge(op.embedding, sub_stree.embedding, current_num)
+                o.append(TreeEmbedding(current_num, True))
+            if len(o) > 0 and o[-1].terminal:
+                left_childs.append(o[-1].embedding)
+            else:
+                left_childs.append(None)
+
+    all_node_feature = torch.stack(all_node_feature, dim=1)  # B x max_output_len x Output_size
+
+    # stop
+    if USE_CUDA:
+        output_len = torch.LongTensor(output_len).cuda()
+        all_node_feature = all_node_feature.cuda()
+        target_tensor = torch.LongTensor(target).cuda()
+
+    loss, accurate = masked_cross_entropy(all_node_feature, target_tensor, output_len)
+    loss.backward()
+
+    # Update parameters with optimizers
+    encoder_optimizer.step()
+    encoder_scheduler.step()
+    
+    predict_optimizer.step()
+    generate_optimizer.step()
+    merge_optimizer.step()
+    return loss.item(), accurate.item()
+
 def evaluate_tree(generate_nums, encoder, predict, generate, merge, output_lang, 
                   num_pos, token_ids, token_type_ids, attention_mask, input_len_max, 
                   beam_size=5, max_length=MAX_OUTPUT_LENGTH):
