@@ -406,7 +406,7 @@ def find_max_prefix_list(logits, output_list, output_len):
 
     return target
 
-
+# Version 1.0
 def train_tree_em(output_list, output_len, num_size, generate_nums,
                encoder, predict, generate, merge, encoder_optimizer, encoder_scheduler, 
                predict_optimizer, generate_optimizer,
@@ -548,7 +548,7 @@ def find_max_prefix_generating(all_node_predict, output_list, output_len, target
                 
     return find_target
 
-
+# Version 2.0
 def train_tree_em2(output_list, output_len, num_size, generate_nums,
                encoder, predict, generate, merge, encoder_optimizer, encoder_scheduler, 
                predict_optimizer, generate_optimizer,

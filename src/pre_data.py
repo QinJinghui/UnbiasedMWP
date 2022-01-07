@@ -4,6 +4,7 @@ import copy
 import re
 import nltk
 import jieba
+from src.tree import *
 import jieba.posseg as pseg
 import numpy as np
 from copy import deepcopy
@@ -290,76 +291,6 @@ def q_num(question_):
         pos = re.search(pattern, question)
     return num_count
 
-
-# 前序遍历建立一颗表达式树
-"""
-{
-    'node': '',
-    'left': {},
-    'right': {}
-}
-"""
-def expression_tree(prefix):
-    tree = {}   
-    if len(prefix) == 0:
-        return tree, prefix
-    tree["node"] = prefix[0]
-    if prefix[0] in ['+', '-', '*', '/', '^']:
-        left, prefix = expression_tree(prefix[1:])
-        tree["left"] = left
-        right, prefix = expression_tree(prefix)
-        tree["right"] = right
-    else:
-        prefix = prefix[1:]
-        tree["left"] = {}
-        tree["right"] = {}
-    return tree, prefix
-
-
-# 根据一颗表达式树,对等价节点左右交换生成等价表达式list
-def variate_tree(tree, root, prefix_all):
-    if root == {}:
-        return 
-        
-    variate_tree(tree, root["left"], prefix_all)
-    variate_tree(tree, root["right"], prefix_all)
-    
-    if root["node"] in ['+', '*']:
-        tmp = root['left'] 
-        root['left'] = root["right"]
-        root["right"] = tmp
-    
-        prefix_all.append(deepcopy(tree))
-    
-        variate_tree(tree, root["left"], prefix_all)
-        variate_tree(tree, root["right"], prefix_all)
-    
-        tmp = root['left'] 
-        root['left'] = root["right"]
-        root["right"] = tmp
-
-
-# 前序遍历表达式树
-def preorder_traversal(tree, prefix):
-    if tree == {}:
-        return 
-    prefix.append(tree["node"])
-    preorder_traversal(tree["left"], prefix)
-    preorder_traversal(tree["right"], prefix)
-
-# 对ground truth前缀表达式构建等价list
-def equivalent_expression(prefix):
-    prefix_tree, _ = expression_tree(prefix)
-    tree_list = [prefix_tree]
-    variate_tree(prefix_tree, prefix_tree, tree_list)
-    equ_list = list()
-    for tree in tree_list:
-        prefix_line = list()
-        preorder_traversal(tree, prefix_line)
-        equ_list.append(prefix_line)
-    return equ_list
-
-
 """
 面向数据:(仅考虑最基础的数据) # 中英文均可
 {
@@ -553,7 +484,7 @@ def transfer_num(data, tokenizer, mask=False, trainset=False):
         '''
         if "output_prefix" in line: # 若字段包含output_prefix,则其一定为ground truth
             out_seq_prefix = line["output_prefix"].split(" ")
-        prefix_list = equivalent_expression(out_seq_prefix)
+        prefix_list = equivalent_expression_old(out_seq_prefix)
 
         ignore = False # 筛未检测变量的文本
         for s in out_seq_prefix:  
