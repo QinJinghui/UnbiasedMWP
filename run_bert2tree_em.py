@@ -193,10 +193,10 @@ if __name__ == "__main__":
 
         for batch in tqdm(train_data_loader):
             if epoch < args.teacher_rate * args.n_epochs:
-                train_function = train_tree_em2
+                train_function = train_tree_em
                 output = batch["output_list"]
             else:
-                train_function = train_tree_em2
+                train_function = train_tree_em
                 output = batch["output_list"]
 
             loss, accurate = train_function(output, batch["output_len"], 

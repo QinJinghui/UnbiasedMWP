@@ -166,8 +166,9 @@ def prefix_to_infix(prefix):
     inorder_traversal(tree, infix)
     return infix
 
-# Version 3.0
-def equivalent_expression(expression_prefix):
+# Version 3.0 (generate expression function)
+def equivalent_expression(expression_prefix_):
+    expression_prefix = copy.deepcopy(expression_prefix_)
     expression_infix = prefix_to_infix(expression_prefix)
     infix_list, prefix_list = generate_equivalent(expression_prefix)
     infix_equivalent = list()
@@ -203,8 +204,9 @@ def variate_tree(tree, root, prefix_all):
 
 
 # 对ground truth前缀表达式构建等价list
-# Version 1.0 & 2.0
-def equivalent_expression_old(prefix):
+# Version 1.0 & 2.0 (generate expression function)
+def equivalent_expression_old(prefix_):
+    prefix = copy.deepcopy(prefix_)
     prefix_tree = dict()
     prefix_to_tree(prefix_tree, prefix)
     tree_list = [prefix_tree]
@@ -217,6 +219,6 @@ def equivalent_expression_old(prefix):
     return equ_list
 
 if __name__ == "__main__":
-    expression_prefix = "- * N2 N0 N3".split()
+    expression_prefix = ['+', '/', '-', 'N2', '*', 'N3', 'N1', 'N0', 'N4'] #"- * N2 N0 N3".split()
     infix_equivalent, prefix_equivalent = equivalent_expression(expression_prefix)
     print(infix_equivalent)
