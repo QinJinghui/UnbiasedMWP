@@ -330,7 +330,9 @@ def transfer_num(data, tokenizer, mask=False, trainset=False):
     generate_nums_dict = {'1':0, '2':0, '3.14':0, '4':0}
     count_num_max = 0 # 一句话里最多有多少个[NUM]
 
-    for line in tqdm(data):
+    # for line in tqdm(data):
+    for line in tqdm(data[8495:8497]):
+        print(line["id"])
         ## *** 对数据集有一个假设:
         ##      equation中数字的形式和文本一样,不然该函数无法提取equation中的数字
         
