@@ -4,6 +4,7 @@ import copy
 import re
 import nltk
 import jieba
+import pickle
 import jieba.posseg as pseg
 import numpy as np
 from tqdm import tqdm
@@ -157,6 +158,19 @@ class Lang:
         for i, j in enumerate(self.index2word):
             self.word2index[j] = i
 
+def save_processed_data(train_fold, valid_fold, test_fold, generate_nums, copy_nums, file_path):
+    data = (train_fold, valid_fold, test_fold, generate_nums, copy_nums)
+    f = open(file_path, 'wb')
+    pickle.dump(data, f)
+
+
+def laod_processed_data(file_path):
+    f = open(file_path, 'rb')
+    train_fold, valid_fold, test_fold, generate_nums, copy_nums = pickle.load(f)
+    return train_fold, valid_fold, test_fold, generate_nums, copy_nums
+
+
+
 """
 data格式：
 {
@@ -292,14 +306,6 @@ def q_num(question_):
     return num_count
 
 """
-面向数据:(仅考虑最基础的数据) # 中英文均可
-{
-    "id":"1",
-    "original_text":"镇海雅乐学校二年级的小朋友到一条小路的一边植树．小朋友们每隔2米种一棵树（马路两头都种了树），最后发现一共种了11棵，这条小路长多少米．",
-    "equation":"x=(11-1)*2",
-    "ans":"20"
-}
-
 输出数据:
 {
     'original_text':line["original_text"].strip().split(" "),
@@ -482,14 +488,21 @@ def transfer_num(data, tokenizer, mask=False, trainset=False):
                 continue
             # ------------------------------------------
         '''
+        print(out_seq_prefix)
         if "output_prefix" in line: # 若字段包含output_prefix,则其一定为ground truth
             out_seq_prefix = line["output_prefix"].split()
-        # print(out_seq_prefix)
-        # prefix_list = []
         if len(out_seq_prefix) >= 9:
             prefix_list = equivalent_expression_old(out_seq_prefix) # Version 1.0 & 2.0
         else:
-            prefix_list = equivalent_expression(out_seq_prefix) # Version 3.0
+            _, prefix_list = equivalent_expression(out_seq_prefix) # Version 3.0
+            
+        if len(prefix_list) == 0 and len(out_seq_prefix) == 1: # 只有一个数字节点
+            prefix_list = [copy.deepcopy(out_seq_prefix)]
+
+        assert len(prefix_list) > 0 
+        print(prefix_list)
+        print('---------------------------------------')
+
 
         ignore = False # 筛未检测变量的文本
         for s in out_seq_prefix:  
@@ -570,7 +583,6 @@ def process_data_pipeline(train_data_path, valid_data_path, test_data_path, toke
         train_data = train_data[:100]
         valid_data = valid_data[:30]
         test_data = test_data[:30]
-
     train_data, generate_nums, copy_nums = transfer_num(train_data, tokenizer, mask, trainset=True)
     valid_data, _, _ = transfer_num(valid_data, tokenizer, mask)
     test_data, _, _ = transfer_num(test_data, tokenizer, mask)
@@ -957,7 +969,7 @@ def prepare_bert_data(pairs_train, pairs_valid, pairs_test, generate_nums,
     for pair in pairs_train:
         output_lang.add_sen_to_vocab(pair['output'])
     print("output vocab:", output_lang.word2index)
-    
+
     if tree:
         output_lang.build_output_lang_for_tree(generate_nums, copy_nums)
     else:

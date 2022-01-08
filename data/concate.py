@@ -147,6 +147,7 @@ def generate_ori(line_):
     assert output != ""
     line["output_infix"] = output
     line["output_prefix"] = ' '.join(from_infix_to_prefix(output.split()))
+    assert len(line["output_prefix"].split()) > 1
     line["output_original"] = output_original(line["nums"], output)
     line["interpretation"] = {}
     del line["equ_unbias"]

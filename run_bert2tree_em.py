@@ -69,6 +69,7 @@ def set_args():
     parser.add_argument('--maskN', action='store_true', default=False)
 
     # 数据相关参数
+    parser.add_argument('--processed', action='store_true', default=False) 
     parser.add_argument('--train_path', type=str, default="data/train_ori.json")
     parser.add_argument('--valid_path', type=str, default="data/valid_ori.json")
     parser.add_argument('--test_path' , type=str, default="data/test_ori.json")
@@ -77,6 +78,7 @@ def set_args():
     parser.add_argument('--bert_path', type=str, default="/data3/yangzhicheng/Data/Pretrained_Model/Bert/chinese-bert-wwm")
     
     # 存储相关参数
+    parser.add_argument('--processed_path', type=str, default="tmp/processed_data.pkt")
     parser.add_argument('--save_path', type=str, default="model/debug")
     parser.add_argument('--save', action='store_true', default=False)
 
@@ -109,8 +111,12 @@ if __name__ == "__main__":
     # logic = read_json(args.logic_path)
     # logic2newid = read_json(args.logic2newid_path)
     # newid2logic = {logic2newid[key]:key for key in logic2newid}  
-    train_fold, valid_fold, test_fold, generate_nums, copy_nums = \
-        process_data_pipeline(args.train_path, args.valid_path, args.test_path, tokenizer, args.debug, args.maskN)
+    if not args.processed:
+        train_fold, valid_fold, test_fold, generate_nums, copy_nums = \
+            process_data_pipeline(args.train_path, args.valid_path, args.test_path, tokenizer, args.debug, args.maskN)
+        save_processed_data(train_fold, valid_fold, test_fold, generate_nums, copy_nums, args.processed_path)
+    train_fold, valid_fold, test_fold, generate_nums, copy_nums = laod_processed_data(args.processed_path)
+
     print(generate_nums, copy_nums)
     train_steps = args.n_epochs * math.ceil(len(train_fold) / args.batch_size)
     output_lang, train_pairs, valid_pairs, test_pairs = prepare_bert_data(train_fold, valid_fold, test_fold, generate_nums,

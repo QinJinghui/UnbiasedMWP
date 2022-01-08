@@ -80,7 +80,7 @@ def prefix_to_tree(tree, prefix):
     tree["left"] = {}
     tree["right"] = {}
     
-    if prefix[0] not in ['+', '-', '*', '/']:
+    if prefix[0] not in ['+', '-', '*', '/', '^']:
         return prefix[1:]
     prefix_left = prefix_to_tree(tree["left"], prefix[1:])
     prefix_right = prefix_to_tree(tree["right"], prefix_left)
@@ -91,7 +91,7 @@ def recognize(prefix):
     op = list()
     nums = list()
     for t in prefix:
-        if t not in ['+', '-', '*', '/']:
+        if t not in ['+', '-', '*', '/', '^']:
             nums.append(t)
         else:
             op.append(t)
