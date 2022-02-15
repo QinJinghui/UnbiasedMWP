@@ -33,7 +33,7 @@ def generate_tree_input(target, num_start):
     target_input = copy.deepcopy(target)
     for i in range(len(target)):
         if target_input[i] >= num_start:
-            target_input[i] = 0
+            target_input[i] = num_start
     return torch.LongTensor(target_input)
 
 def check_logic(predict, logic):

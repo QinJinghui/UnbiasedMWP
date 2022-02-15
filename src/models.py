@@ -259,6 +259,7 @@ class Encoder_Bert(nn.Module):
     def savebert(self, save_path):
         torch.save(self.bert_wwm.state_dict(), save_path)
 
+# op_nums in Prediction: ['+', '-', '*', '/']
 class Prediction_Inter(nn.Module):
     # a seq2tree decoder with Problem aware dynamic encoding
 
@@ -367,6 +368,7 @@ class Prediction_Inter(nn.Module):
         ##     num_score, op_score, logic_score, Goal Vector,  Context Vector,  ALL Num embedding
         return num_score, op_score, logic_score, current_node, current_context, embedding_weight
 
+# op_nums in Prediction: ['+', '-', '*', '/']
 class Prediction_Inter_base(nn.Module):
     # a seq2tree decoder with Problem aware dynamic encoding
 
@@ -475,6 +477,7 @@ class Prediction_Inter_base(nn.Module):
         ##     num_score, op_score, logic_score, Goal Vector,  Context Vector,  ALL Num embedding
         return num_score, op_score, logic_score, current_node, current_context, embedding_weight
 
+# op_nums in Prediction: ['+', '-', '*', '/']
 class Prediction(nn.Module):
     # a seq2tree decoder with Problem aware dynamic encoding
 
@@ -571,7 +574,7 @@ class Prediction(nn.Module):
         ##     num_score, op_score, Goal Vector,  Context Vector,  ALL Num embedding
         return num_score, op_score, current_node, current_context, embedding_weight
 
-
+# op_nums in GenerateNode: ['+', '-', '*', '/', '[NUM]']
 class GenerateNode(nn.Module):
     def __init__(self, hidden_size, op_nums, embedding_size, dropout=0.5):
         super(GenerateNode, self).__init__()

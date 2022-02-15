@@ -68,9 +68,9 @@ def set_args():
     parser.add_argument('--maskN', action='store_true', default=False)
 
     # 数据相关参数
-    parser.add_argument('--train_path', type=str, default="data/train_src.json")
-    parser.add_argument('--valid_path', type=str, default="data/valid_src.json")
-    parser.add_argument('--test_path' , type=str, default="data/test_src.json")
+    parser.add_argument('--train_path', type=str, default="data/UnbiasedMWP/UnbiasedMWP-All/train_all.json")
+    parser.add_argument('--valid_path', type=str, default="data/UnbiasedMWP/UnbiasedMWP-All/valid_all.json")
+    parser.add_argument('--test_path' , type=str, default="data/UnbiasedMWP/UnbiasedMWP-All/test_all.json")
 
     # 预训练模型路径    
     parser.add_argument('--bert_path', type=str, default="/data3/yangzhicheng/Data/Pretrained_Model/Bert/chinese-bert-wwm")

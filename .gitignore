@@ -1,5 +1,5 @@
 src/__pycache__
-data/old_all_data
+data/
 .vscode
 model
 runs
