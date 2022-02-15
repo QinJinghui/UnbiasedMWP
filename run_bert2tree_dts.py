@@ -126,9 +126,11 @@ if __name__ == "__main__":
 
     # Initialize models
     encoder = Encoder_Bert(bert_path=args.bert_path)
+    # op_nums in Prediction: ['+', '-', '*', '/']
     predict = Prediction(hidden_size=args.hidden_size, op_nums=output_lang.n_words - copy_nums - 1 - len(generate_nums),
                         input_size=len(generate_nums))
-    generate = GenerateNode(hidden_size=args.hidden_size, op_nums=output_lang.n_words - copy_nums - 1 - len(generate_nums),
+    # op_nums in GenerateNode: ['+', '-', '*', '/', '[NUM]']
+    generate = GenerateNode(hidden_size=args.hidden_size, op_nums=output_lang.n_words - copy_nums - len(generate_nums),
                             embedding_size=args.embedding_size)
     merge = Merge(hidden_size=args.hidden_size, embedding_size=args.embedding_size)
 
